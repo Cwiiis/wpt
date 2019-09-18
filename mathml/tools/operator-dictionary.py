@@ -3,16 +3,9 @@
 from lxml import etree
 from utils.misc import downloadWithProgressBar, UnicodeXMLURL
 import json
+from utils import mathfont
 
-# Retrieve the unicode.xml file if necessary.
-unicodeXML = downloadWithProgressBar(UnicodeXMLURL)
-
-# Extract the mathvariants transformation.
-xsltTransform = etree.XSLT(etree.parse("./operator-dictionary.xsl"))
-
-# Put the operator dictionary into a Python structure.
-operatorDictionary = {}
-root = xsltTransform(etree.parse(unicodeXML)).getroot()
+NonBreakingSpace = 0x00A0
 
 def parseHexaNumber(string):
     return int("0x%s" % string, 16)
@@ -20,44 +13,108 @@ def parseHexaNumber(string):
 def parseHexaSequence(string):
     return tuple(map(parseHexaNumber, string[1:].split("-")))
 
-def parseSpaces(value, entry):
-    for name in ["lspace", "rspace"]:
+def parseSpaces(value, entry, names):
+    for name in names:
         attributeValue = entry.get(name)
         if attributeValue is not None:
             value[name] = int(attributeValue)
 
-def parseProperties(value, entry):
+def parseProperties(value, entry, names):
     attributeValue = entry.get("properties")
     if attributeValue is not None:
-        # The fence and separator properties don't have any effect on math
-        # layout, so don't add them to the JSON file until we actually need
-        # them.
-        for name in ["stretchy", "symmetric", "largeop", "movablelimits", "accent"]:
+        for name in names:
             if attributeValue.find(name) >= 0:
                 value[name] = True
 
-for entry in root:
-    characters = parseHexaSequence(entry.get("unicode"))
-    form = entry.get("form")
+def buildKeyAndValueFrom(characters, form):
+    # Concatenate characters and form to build the key.
     key = ""
     for c in characters:
         key += unichr(c)
     key += " " + form
+    # But save them as individual properties in the value for easier
+    # manipulation in this Python script.
     value = {
         "characters": characters,
         "form": form
     }
-    # There is no dictionary-specified minsize/maxsize values, so no need to parse them.
-    parseSpaces(value, entry)
-    parseProperties(value, entry)
+    return key, value
+
+def createSizeVariants(aFont):
+    for size in (0, 1, 2, 3):
+        g = aFont.createChar(-1, "v%d" % size)
+        mathfont.drawRectangleGlyph(g, mathfont.em, (size + 1) * mathfont.em, 0)
+        g = aFont.createChar(-1, "h%d" % size)
+        mathfont.drawRectangleGlyph(g, (size + 1) * mathfont.em, mathfont.em, 0)
+
+def createStretchy(aFont, codePoint, isHorizontal):
+    if isHorizontal:
+        aFont[codePoint].horizontalVariants = "h0 h1 h2 h3"
+        aFont[codePoint].horizontalComponents = \
+            (("h2", False, 0, mathfont.em, 3 * mathfont.em), \
+             ("h1", True, mathfont.em, mathfont.em, 2 * mathfont.em))
+    else:
+        aFont[codePoint].verticalVariants = "v0 v1 v2 v3"
+        aFont[codePoint].verticalComponents = \
+            (("v2", False, 0, mathfont.em, 3 * mathfont.em), \
+             ("v1", True, mathfont.em, mathfont.em, 2 * mathfont.em))
+
+# Retrieve the unicode.xml file if necessary.
+unicodeXML = downloadWithProgressBar(UnicodeXMLURL)
+
+# Extract the operator dictionary.
+xsltTransform = etree.XSLT(etree.parse("./operator-dictionary.xsl"))
+
+# Put the operator dictionary into a Python structure.
+operatorDictionary = {}
+root = xsltTransform(etree.parse(unicodeXML)).getroot()
+for entry in root:
+    characters = parseHexaSequence(entry.get("unicode"))
+    assert characters != (NonBreakingSpace)
+    key, value = buildKeyAndValueFrom(characters, entry.get("form"))
+    # There is no dictionary-specified minsize/maxsize values, so no need to
+    # parse them.
+    # The fence, separator and priority properties don't have any effect on math
+    # layout, so they are not added to the JSON file.
+    parseSpaces(value, entry, ["lspace", "rspace"])
+    parseProperties(value, entry, ["stretchy", "symmetric", "largeop",
+                                   "movablelimits", "accent"])
     operatorDictionary[key] = value
 
-# FIXME: Create appropriate test fonts, etc
+# Create entries for the non-breaking space in all forms in order to test the
+# default for operators outside the official dictionary.
+for form in ["infix", "prefix", "suffix"]:
+    key, value = buildKeyAndValueFrom(tuple([NonBreakingSpace]), form)
+    operatorDictionary[key] = value
 
-# Serialize to JSON.
+# Create a WOFF font with glyphs for all the operator strings.
+font = mathfont.create("operators")
+font.math.DisplayOperatorMinHeight = 2 * mathfont.em
+font.math.MinConnectorOverlap = mathfont.em / 2
+createSizeVariants(font)
 for key in operatorDictionary:
+    value = operatorDictionary[key]
+    for c in value["characters"]:
+        if c in font:
+            continue
+        if c == NonBreakingSpace:
+            g = font.createChar(c)
+            mathfont.drawRectangleGlyph(g, mathfont.em, mathfont.em / 3, 0)
+        else:
+            mathfont.createSquareGlyph(font, c)
+        createStretchy(font, c, False)
+mathfont.save(font)
+
+# Generate the python file.
+for key in operatorDictionary:
+    # Delete the helper values "characters" and "form" since they can be deduced
+    # from the key.
     del operatorDictionary[key]["characters"]
     del operatorDictionary[key]["form"]
-operatorDictionary[""] = "This file was automatically generated by operator-dictionary.py. Do not edit."
+JSON = {
+    "comment": "This file was automatically generated by operator-dictionary.py. Do not edit.",
+    "dictionary": operatorDictionary,
+    "horizontal": None
+}
 with open('../support/operator-dictionary.json', 'w') as fp:
-    json.dump(operatorDictionary, fp, sort_keys=True, ensure_ascii=True)
+    json.dump(JSON, fp, sort_keys=True, ensure_ascii=True)

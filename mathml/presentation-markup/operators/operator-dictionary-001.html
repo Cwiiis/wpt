@@ -6,35 +6,55 @@
 <link rel="help" href="https://mathml-refresh.github.io/mathml-core/#operator-fence-separator-or-accent-mo">
 <link rel="help" href="https://mathml-refresh.github.io/mathml-core/#dictionary-based-attributes">
 <link rel="help" href="https://mathml-refresh.github.io/mathml-core/#operator-dictionary">
-<meta name="assert" content="Verify properties of the operator dictionary">
+<meta name="assert" content="Verify default properties for characters that are in the operator dictionary, as well as for U+00A0 NO-BREAK SPACE">
 <script src="/resources/testharness.js"></script>
 <script src="/resources/testharnessreport.js"></script>
 <script src="/mathml/support/feature-detection.js"></script>
 <script src="/mathml/support/operator-dictionary.js"></script>
+<style>
+  @font-face {
+    font-family: operators;
+    src: url("/fonts/math/operators.woff");
+  }
+  math {
+      font-family: operators;
+  }
+</style>
 <script>
   setup({ explicit_done: true });
-  window.addEventListener("load", runTests);
+  window.addEventListener("load", () => { document.fonts.ready.then(runTests); });
 
   async function runTests() {
       let epsilon = 1;
-      let dictionary = await fetchOperatorDictionary();
+      let json = await fetchOperatorDictionary();
+
+      // The operator dictionary has more than one thousand of entries so the
+      // tests are grouped in chunks so that these don't get much more
+      // importance than other MathML tests. For easy debugging, one can set the
+      // chunk size to 1.
+      const entryPerChunk = 50
+
       var counter = 0;
       var tests = {
-          "lspace/rspace": null
+          "lspace/rspace": null,
+          "movablelimits": null,
+          "largeop": null
       };
 
-      for (key in dictionary) {
-          if (key === "") continue;
+      for (key in json.dictionary) {
+
           if (counter % entryPerChunk === 0) {
+              // Start of a new chunk.
               // Complete current async tests and create new ones for the next chunk.
               for (name in tests) {
                   if (tests[name]) tests[name].done();
-                  tests[name] = async_test(`Operator dictionary chunk ${counter / entryPerChunk} - ${name}`);
+                  tests[name] = async_test(`Operator dictionary chunk ${1 + counter / entryPerChunk} - ${name}`);
               }
           }
 
           let parsedKey = splitKey(key);
-          let entry = dictionary[key];
+          let entry = json.dictionary[key];
+
           tests["lspace/rspace"].step(function() {
               assert_true(MathMLFeatureDetection.has_operator_spacing());
               document.body.insertAdjacentHTML("beforeend", `<div>
@@ -45,30 +65,74 @@
     <mn>2</mn>\
   </mrow>\
 </math>\
+ VS \
 <math>\
   <mrow>\
     <mn>0</mn>\
-    <mo form="${parsedKey.form}" lspace="${defaultLspace(entry)}" rspace="${defaultRspace(entry)}">${parsedKey.characters}</mo>\
+    <mo form="${parsedKey.form}" lspace="${defaultPropertyValue(entry, 'lspace')}" rspace="${defaultPropertyValue(entry, 'rspace')}">${parsedKey.characters}</mo>\
     <mn>2</mn>\
   </mrow>\
 </math>\
 </div>`);
               var div = document.body.lastElementChild;
               var mrows = div.getElementsByTagName("mrow");
-              var lspace =
-                  mrows[0].children[1].getBoundingClientRect().left -
-                  mrows[0].children[0].getBoundingClientRect().right;
-              var rspace =
-                  mrows[0].children[2].getBoundingClientRect().left -
-                  mrows[0].children[1].getBoundingClientRect().right;
-              var lspaceRef =
-                  mrows[1].children[1].getBoundingClientRect().left -
-                  mrows[1].children[0].getBoundingClientRect().right;
-              var rspaceRef =
-                  mrows[1].children[2].getBoundingClientRect().left -
-                  mrows[1].children[1].getBoundingClientRect().right;
+              function spaceBetween(element, i, j) {
+                  return element.children[j].getBoundingClientRect().left -
+                      element.children[i].getBoundingClientRect().right;
+              }
+              var lspace = spaceBetween(mrows[0], 0, 1);
+              var rspace = spaceBetween(mrows[0], 1, 2);
+              var lspaceRef = spaceBetween(mrows[1], 0, 1);
+              var rspaceRef = spaceBetween(mrows[1], 1, 2);
               assert_approx_equals(lspace, lspaceRef, epsilon, `lspace (${key})`);
               assert_approx_equals(rspace, rspaceRef, epsilon, `rspace (${key})`);
+              div.style.display = "none";
+          });
+
+          tests["movablelimits"].step(function() {
+              assert_true(MathMLFeatureDetection.has_movablelimits());
+              var defaultValue = defaultPropertyValue(entry, 'movablelimits');
+              document.body.insertAdjacentHTML("beforeend", `<div>
+<math>\
+  <munder>\
+    <mo stretchy="false" form="${parsedKey.form}">${parsedKey.characters}</mo>\
+    <mn>&nbsp;</mn>\
+  </munder>\
+</math>\
+ VS \
+<math>\
+  <munder>\
+    <mo stretchy="false" form="${parsedKey.form}" movablelimits="${defaultValue}">${parsedKey.characters}</mo>\
+    <mn>&nbsp;</mn>\
+  </munder>\
+</math>\
+</div>`);
+              var div = document.body.lastElementChild;
+              var munders = div.getElementsByTagName("munder");
+              munder = munders[0].getBoundingClientRect()
+              munderRef = munders[1].getBoundingClientRect()
+              assert_approx_equals(munder.height, munderRef.height, epsilon, `Displaystyle size for ${key} is '${defaultValue}'`);
+              div.style.display = "none";
+          });
+
+          tests["largeop"].step(function() {
+              // FIXME: Should really detect largeop or displaystyle feature...
+              assert_true(MathMLFeatureDetection.has_mspace());
+              var defaultValue = defaultPropertyValue(entry, 'largeop');
+              document.body.insertAdjacentHTML("beforeend", `<div>
+<math displaystyle="true">\
+  <mo form="${parsedKey.form}">${parsedKey.characters}</mo>\
+</math>\
+ VS \
+<math displaystyle="true">\
+  <mo form="${parsedKey.form}" largeop="${defaultValue}">${parsedKey.characters}</mo>\
+</math>\
+</div>`);
+              var div = document.body.lastElementChild;
+              var mos = div.getElementsByTagName("mo");
+              mo = mos[0].getBoundingClientRect()
+              moRef = mos[1].getBoundingClientRect()
+              assert_approx_equals(mo.height, moRef.height, epsilon, `Displaystyle size for ${key} is '${defaultValue}'`);
               div.style.display = "none";
           });
 

@@ -1,5 +1,3 @@
-window.entryPerChunk = 50;
-
 async function fetchOperatorDictionary() {
     let response = await fetch(`/mathml/support/operator-dictionary.json`);
     return response.json();
@@ -26,10 +24,16 @@ function spaceIndexToLength(index) {
            ][index];
 }
 
-function defaultLspace(entry) {
-    return spaceIndexToLength(entry.hasOwnProperty("lspace") ? entry["lspace"] : 5)
-}
-
-function defaultRspace(entry) {
-    return spaceIndexToLength(entry.hasOwnProperty("rspace") ? entry["rspace"] : 5)
+function defaultPropertyValue(entry, name) {
+    switch (name) {
+    case "lspace":
+    case "rspace":
+        return spaceIndexToLength(entry.hasOwnProperty(name) ? entry[name] : 5);
+    break
+    case "largeop":
+    case "movablelimits":
+        return entry[name];
+    default:
+        throw `Unknown property ${name}`;
+    }
 }
