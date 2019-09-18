@@ -31,7 +31,8 @@
       // The operator dictionary has more than one thousand of entries so the
       // tests are grouped in chunks so that these don't get much more
       // importance than other MathML tests. For easy debugging, one can set the
-      // chunk size to 1.
+      // chunk size to 1. Also, note that the test div will remain visible for
+      // failed tests.
       const entryPerChunk = 50
 
       var counter = 0;
@@ -57,7 +58,8 @@
 
           tests["lspace/rspace"].step(function() {
               assert_true(MathMLFeatureDetection.has_operator_spacing());
-              document.body.insertAdjacentHTML("beforeend", `<div>
+              document.body.insertAdjacentHTML("beforeend", `<div>\
+rspace/space for "${parsedKey.characters}" (${parsedKey.form}): \
 <math>\
   <mrow>\
     <mn>0</mn>\
@@ -92,7 +94,8 @@
           tests["movablelimits"].step(function() {
               assert_true(MathMLFeatureDetection.has_movablelimits());
               var defaultValue = defaultPropertyValue(entry, 'movablelimits');
-              document.body.insertAdjacentHTML("beforeend", `<div>
+              document.body.insertAdjacentHTML("beforeend", `<div>\
+movablelimits for "${parsedKey.characters}" (${parsedKey.form}): \
 <math>\
   <munder>\
     <mo stretchy="false" form="${parsedKey.form}">${parsedKey.characters}</mo>\
@@ -119,7 +122,8 @@
               // FIXME: Should really detect largeop or displaystyle feature...
               assert_true(MathMLFeatureDetection.has_mspace());
               var defaultValue = defaultPropertyValue(entry, 'largeop');
-              document.body.insertAdjacentHTML("beforeend", `<div>
+              document.body.insertAdjacentHTML("beforeend", `<div>\
+largeop for "${parsedKey.characters}" (${parsedKey.form}): \
 <math displaystyle="true">\
   <mo form="${parsedKey.form}">${parsedKey.characters}</mo>\
 </math>\
